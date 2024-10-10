@@ -117,3 +117,5 @@ for suggestion in suggestions:
     i += 1
     prompt = f"To increase my nocturnal HRV during sleep, I was given the following piece of advice: {suggestion}. Can you suggest in a 2-3 sentences some ways I can achieve this through easy changes in my behaviour. Mention the impact it can have on nocturnal hrv by changing the current value to the suggested value. Structure it like a recommendation starting with something like you can. Also call out the improvement/ reduction that needs to be made in the metric"
     st.write(f"{i}. {openai_response(prompt)}")
+
+st.write("Thank you")
