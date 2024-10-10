@@ -70,7 +70,7 @@ def make_suggestions(shap_df, user_data, X_day, user_model):
             else:
                 feature_value = f'{feature_value:.0f}'
                 target_value = f'{target_value:.0f}'
-            suggestion = f"Try {direction} your {feature_name} from {feature_value} to {target_value} to improve the Nocturnal HRV by {flag:.0f} bpm."
+            suggestion = f"Try {direction} your {feature_name} from {feature_value} to {target_value} to improve the Nocturnal HRV by {flag:.0f} ms."
             suggestions.append(suggestion)
     return suggestions
 
