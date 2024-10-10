@@ -34,8 +34,6 @@ shap_values = explainer.shap_values(X_day)
 shap_df = pd.DataFrame({'Feature': X_day.columns.to_list(), 'SHAP Value': shap_values[0].tolist()}).sort_values(by=['SHAP Value'], ascending= True)
 shap_df['Weights'] = np.abs(shap_df['SHAP Value'])
 shap_df.sort_values(by= "Weights", ascending= False, inplace= True)
-shap.initjs()
-shap.force_plot(explainer.expected_value, shap_values, X_day, matplotlib=True)
 
 def convert_seconds_to_hhmm(seconds):
     hours = seconds // 3600
