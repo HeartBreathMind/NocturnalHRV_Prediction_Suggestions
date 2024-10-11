@@ -10,31 +10,6 @@ openai_api_key = st.secrets["OPENAI_API_KEY"]
 pd.options.mode.chained_assignment = None
 np.random.seed(14)
 
-# Streamlit app setup
-st.title("Nocturnal HRV Prediction & Suggestions")
-st.sidebar.header("Select User")
-
-oura_database = pd.read_csv('database/oura_data/oura_database.csv')
-model_stats = pd.read_csv("ML_Models/Model_stats.csv", index_col= 0).reset_index().rename(columns={'index': 'user'})
-
-st.sidebar.header("Select User")
-email = st.sidebar.selectbox("Select User", model_stats.email.values.tolist())
-user = email.split('@')[0].split('.')[0]
-user_model = joblib.load(f'ML_Models/xgboost_{user}.joblib')
-user_data = oura_database[(oura_database.email == email)]
-X = user_data[user_model.feature_names_in_.tolist()]
-duration_cols = [i for i in user_model.feature_names_in_.tolist() if '_time' in i or '_duration' in i]
-
-date = st.selectbox("Select Date", user_data[['day', 'nocturnal_hrv']].sort_values(by= "day", ascending= False).dropna().day.values.tolist())
-
-explainer = shap.TreeExplainer(user_model)
-user_data_day = user_data[user_data.day == date]
-X_day = user_data_day[user_model.feature_names_in_.tolist()]
-shap_values = explainer.shap_values(X_day)
-shap_df = pd.DataFrame({'Feature': X_day.columns.to_list(), 'SHAP Value': shap_values[0].tolist()}).sort_values(by=['SHAP Value'], ascending= True)
-shap_df['Weights'] = np.abs(shap_df['SHAP Value'])
-shap_df.sort_values(by= "Weights", ascending= False, inplace= True)
-
 def convert_seconds_to_hhmm(seconds):
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
@@ -70,9 +45,45 @@ def make_suggestions(shap_df, user_data, X_day, user_model):
             else:
                 feature_value = f'{feature_value:.0f}'
                 target_value = f'{target_value:.0f}'
-            suggestion = f"Try {direction} your {feature_name} from {feature_value} to {target_value} to improve the Nocturnal HRV by {flag:.0f} ms."
+            suggestion = f"Try {direction} your {feature_name} from {feature_value} to {target_value} to improve the Nocturnal HRV by {flag:.0f} bpm."
             suggestions.append(suggestion)
     return suggestions
+
+def openai_response(prompt, model = "gpt-4o"):
+    client = OpenAI(api_key= openai_api_key.replace('"',''))
+    response = client.chat.completions.create(
+        model= model,
+        messages=[ {"role": "user", "content": f"{prompt}"}]
+        )
+    return response.choices[0].message.content.strip()
+
+# Streamlit app setup
+st.title("Nocturnal HRV Prediction & Suggestions")
+st.sidebar.header("Select User")
+
+oura_database = pd.read_csv('database/oura_data/oura_database.csv')
+model_stats = pd.read_csv("ML_Models/Model_stats.csv", index_col= 0).reset_index().rename(columns={'index': 'user'})
+
+st.sidebar.header("Select User")
+email = st.sidebar.selectbox("Select User", model_stats.email.values.tolist())
+user = email.split('@')[0].split('.')[0]
+user_model = joblib.load(f'ML_Models/xgboost_{user}.joblib')
+user_data = oura_database[(oura_database.email == email)]
+X = user_data[user_model.feature_names_in_.tolist()]
+duration_cols = [i for i in user_model.feature_names_in_.tolist() if '_time' in i or '_duration' in i]
+
+date = st.selectbox("Select Date", user_data[['day', 'nocturnal_hrv']].sort_values(by= "day", ascending= False).dropna().day.values.tolist())
+
+explainer = shap.TreeExplainer(user_model)
+user_data_day = user_data[user_data.day == date]
+X_day = user_data_day[user_model.feature_names_in_.tolist()]
+shap_values = explainer.shap_values(X_day)
+shap_df = pd.DataFrame({'Feature': X_day.columns.to_list(), 'SHAP Value': shap_values[0].tolist()}).sort_values(by=['SHAP Value'], ascending= True)
+shap_df['Weights'] = np.abs(shap_df['SHAP Value'])
+shap_df['Feature_values'] = [convert_seconds_to_hhmm(X_day[col].values[0]) if col in duration_cols else f"{X_day[col].values[0]}" for col in shap_df.Feature ]
+shap_df.sort_values(by= "Weights", ascending= False, inplace= True)
+# shap.initjs()
+# shap.force_plot(explainer.expected_value, shap_values, X_day, matplotlib=True)
 
 st.write(f"Nocturnal HRV: {user_data_day.nocturnal_hrv.values[0]}")
 st.write("Features that have the highest impact on the selected day's nocturnal HRV are:")
@@ -101,21 +112,29 @@ fig.update_layout(
 )
 st.plotly_chart(fig)
 
-def openai_response(prompt, model = "gpt-4o"):
-    client = OpenAI(api_key= openai_api_key.replace('"',''))
-    response = client.chat.completions.create(
-        model= model,
-        messages=[ {"role": "user", "content": f"{prompt}"}]
-        )
-    return response.choices[0].message.content.strip()
-
 suggestions = make_suggestions(shap_df, user_data, X_day, user_model)
 st.subheader("Suggestions to Improve Nocturnal HRV")
 i = 0
+recommendations = []
 st.write("AI recommendations for improving Nocturnal HRV: ")
 for suggestion in suggestions:
     i += 1
     prompt = f"To increase my nocturnal HRV during sleep, I was given the following piece of advice: {suggestion}. Can you suggest in a 2-3 sentences some ways I can achieve this through easy changes in my behaviour. Mention the impact it can have on nocturnal hrv by changing the current value to the suggested value. Structure it like a recommendation starting with something like you can. Also call out the improvement/ reduction that needs to be made in the metric"
-    st.write(f"{i}. {openai_response(prompt)}")
+    recommendation = openai_response(prompt)
+    recommendations.append(recommendation)
+    st.write(f"{i}. {recommendation}")
 
-st.write("Thank you")
+def nocturnal_hrv_prediction_summary(shap_df):
+    temp_shap_df = shap_df.head(5)
+    features = temp_shap_df.Feature.replace('_', ' ').str.title().tolist()[::-1]
+    contributions = [(value / sum(temp_shap_df.Weights.tolist()[::-1])) * 100 for value in temp_shap_df.Weights.tolist()[::-1]]
+    values = temp_shap_df.Feature_values.tolist()[::-1]
+    nocturnal_hrv_prediction_summary = {
+    "features": features, 
+    "contribution": contributions, 
+    "values": values,
+    "recommendation": recommendations
+    }
+    return nocturnal_hrv_prediction_summary
+
+print(nocturnal_hrv_prediction_summary(shap_df))
