@@ -57,6 +57,21 @@ def openai_response(prompt, model = "gpt-4o"):
         )
     return response.choices[0].message.content.strip()
 
+def create_nocturnal_hrv_prediction_summary(shap_df, feature_count):
+    temp_shap_df = shap_df.head(feature_count)
+    features = [i.replace('_', ' ').title() for i in temp_shap_df.Feature.tolist()[::-1]]
+    weights = temp_shap_df.Weights.tolist()[::-1]
+    contributions = [(value / sum(weights)) * 100 for value in weights]
+    values = temp_shap_df.Feature_values.tolist()[::-1]
+    nocturnal_hrv_prediction_summary = {
+    "features": features, 
+    "weights": weights,
+    "contributions": contributions, 
+    "values": values,
+    "recommendation": recommendations
+    }
+    return nocturnal_hrv_prediction_summary
+
 # Streamlit app setup
 st.title("Nocturnal HRV Prediction & Suggestions")
 st.sidebar.header("Select User")
@@ -90,28 +105,6 @@ st.write("Features that have the highest impact on the selected day's nocturnal 
 for col in shap_df.head(5).Feature:
     st.write(col.replace('_', " ").title())
 
-features = shap_df.head(5)['Feature'].replace('_', ' ').str.title().tolist()
-  # Reformat feature names
-shap_values = shap_df.head(5)['Weights'].tolist()
-features.reverse()
-shap_values.reverse()
-normalized_percentages = [(value / sum(shap_values)) * 100 for value in shap_values]
-# Create a bar chart
-fig = go.Figure(go.Funnel(
-    y=features,  # Feature names on the y-axis
-    x=shap_values,  # SHAP values on the x-axis
-    textinfo="text",  # Display value and percentage of the initial value
-    text=[f"{percent:.0f}%" for value, percent in zip(shap_values, normalized_percentages)],
-    marker={"color": "blue"}  # You can customize the color here
-))
-
-# Update layout for better readability
-fig.update_layout(
-    title="Feature Contributions Funnel (Top 6 SHAP Values)",
-    funnelmode="stack"  # Stacks the funnel sections
-)
-st.plotly_chart(fig)
-
 suggestions = make_suggestions(shap_df, user_data, X_day, user_model)
 st.subheader("Suggestions to Improve Nocturnal HRV")
 i = 0
@@ -124,17 +117,21 @@ for suggestion in suggestions:
     recommendations.append(recommendation)
     st.write(f"{i}. {recommendation}")
 
-def nocturnal_hrv_prediction_summary(shap_df):
-    temp_shap_df = shap_df.head(5)
-    features = temp_shap_df.Feature.replace('_', ' ').str.title().tolist()[::-1]
-    contributions = [(value / sum(temp_shap_df.Weights.tolist()[::-1])) * 100 for value in temp_shap_df.Weights.tolist()[::-1]]
-    values = temp_shap_df.Feature_values.tolist()[::-1]
-    nocturnal_hrv_prediction_summary = {
-    "features": features, 
-    "contribution": contributions, 
-    "values": values,
-    "recommendation": recommendations
-    }
-    return nocturnal_hrv_prediction_summary
+nocturnal_hrv_prediction_summary = create_nocturnal_hrv_prediction_summary(shap_df, 6)
+# Create a bar chart
+fig = go.Figure(go.Funnel(
+    y=nocturnal_hrv_prediction_summary['features'],  # Feature names on the y-axis
+    x=nocturnal_hrv_prediction_summary['weights'],  # SHAP values on the x-axis
+    textinfo="text",  # Display value and percentage of the initial value
+    text=[f"{percent:.0f}%" for percent in nocturnal_hrv_prediction_summary['contributions']],
+    marker={"color": "blue"}  # You can customize the color here
+))
+# Update layout for better readability
+fig.update_layout(
+    title="Feature Contributions Funnel (Top 6 SHAP Values)",
+    funnelmode="stack"  # Stacks the funnel sections
+)
+# Show the plot
+st.plotly_chart(fig)
 
-print(nocturnal_hrv_prediction_summary(shap_df))
+print(nocturnal_hrv_prediction_summary)
